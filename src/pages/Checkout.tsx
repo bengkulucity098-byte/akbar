@@ -213,12 +213,9 @@ export default function Checkout() {
                     name="district"
                     value={formData.district}
                     onChange={handleChange}
-                    maxLength={5}
-                    inputMode="numeric"
-                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.postalCode ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm`}
-                    placeholder="Kode pos 5 digit"
+                    className="w-full px-4 py-2.5 rounded-lg border border-border focus:outline-none focus:border-deep text-sm"
+                    placeholder="Nama kecamatan"
                   />
-                  {errors.postalCode && <p className="text-xs text-red-500 mt-1">{errors.postalCode}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Kode Pos</label>
@@ -227,9 +224,12 @@ export default function Checkout() {
                     name="postalCode"
                     value={formData.postalCode}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 rounded-lg border border-border focus:outline-none focus:border-deep text-sm"
-                    placeholder="Opsional"
+                    maxLength={5}
+                    inputMode="numeric"
+                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.postalCode ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm`}
+                    placeholder="Kode pos 5 digit"
                   />
+                  {errors.postalCode && <p className="text-xs text-red-500 mt-1">{errors.postalCode}</p>}
                 </div>
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Jasa Pengiriman *</label>
