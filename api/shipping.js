@@ -22,7 +22,11 @@ export default async function handler(req, res) {
       signal: AbortSignal.timeout(12000)
     });
     const data = await response.json();
-    if (!response.ok || data.success === false) return res.status(502).json({ error: 'Penyedia ongkir belum dapat memberikan tarif untuk tujuan ini.' });
+    if (!response.ok || data.success === false) {
+      // Keep provider details server-side for diagnosis without exposing API credentials.
+      console.error('Biteship rates API error', response.status, JSON.stringify(data).slice(0, 1200));
+      return res.status(502).json({ error: 'Biteship menolak permintaan tarif. Periksa API key, format kode pos, dan dukungan layanan pada Vercel Logs.' });
+    }
     const options = (Array.isArray(data.pricing) ? data.pricing : [])
       .filter(x => Number.isFinite(x.price) && x.price >= 0 && (/(reg|regular|reguler|standard|standar|economy|eco|hemat|ekonom)/i.test([x.courier_service_name,x.courier_service_code,x.service_type,x.description].join(' '))))
       .map(x => ({ courier: String(x.courier_name || x.company || ''), service: String(x.courier_service_name || x.courier_service_code || ''), code: String(x.courier_service_code || ''), price: x.price, duration: String(x.duration || '') }))
