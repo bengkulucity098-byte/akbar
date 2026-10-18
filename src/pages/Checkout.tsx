@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { formatPrice, ProductImage } from '../components/ProductCard';
@@ -19,6 +19,30 @@ export default function Checkout() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [shippingOptions, setShippingOptions] = useState<Array<{courier:string;service:string;code:string;price:number;duration:string}>>([]);
+  const [selectedShipping, setSelectedShipping] = useState('');
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingError, setShippingError] = useState('');
+  const totalWeight = cart.reduce((sum, item) => sum + item.quantity * 200, 0);
+  const chosenShipping = shippingOptions.find(option => (option.courier + '|' + option.code + '|' + option.price) === selectedShipping);
+  const grandTotal = cartTotal + (chosenShipping?.price || 0);
+  useEffect(() => {
+    const postalCode = formData.postalCode.trim();
+    if (!/^\d{5}$/.test(postalCode) || cart.length === 0) { setShippingOptions([]); setSelectedShipping(''); setShippingError(''); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setShippingLoading(true); setShippingError('');
+      try {
+        const response = await fetch('/api/shipping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destinationPostalCode: postalCode, items: cart.map(item => ({ name: item.product.name, price: item.product.price, quantity: item.quantity })) }), signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Gagal menghitung ongkir.');
+        setShippingOptions(data.options || []); setSelectedShipping('');
+        if (!data.options?.length) setShippingError('Tidak ada layanan reguler/hemat untuk kode pos ini.');
+      } catch (error) { if (!controller.signal.aborted) { setShippingOptions([]); setSelectedShipping(''); setShippingError(error instanceof Error ? error.message : 'Gagal menghitung ongkir.'); } }
+      finally { if (!controller.signal.aborted) setShippingLoading(false); }
+    }, 500);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [formData.postalCode, cart]);
 
   if (cart.length === 0 && !submitted) {
     return (
@@ -40,6 +64,8 @@ export default function Checkout() {
     if (!formData.province.trim()) newErrors.province = 'Provinsi wajib diisi';
     if (!formData.city.trim()) newErrors.city = 'Kota wajib diisi';
     if (!formData.address.trim()) newErrors.address = 'Alamat wajib diisi';
+    if (!/^\d{5}$/.test(formData.postalCode.trim())) newErrors.postalCode = 'Masukkan kode pos 5 digit';
+    if (!chosenShipping) newErrors.shipping = 'Pilih layanan pengiriman yang tersedia';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -67,8 +93,11 @@ export default function Checkout() {
 
     message += `*Ringkasan:*\n`;
     message += `Subtotal: ${formatPrice(cartTotal)}\n`;
-    message += `Ongkir: Menunggu konfirmasi\n`;
-    message += `Total: ${formatPrice(cartTotal)} (+ ongkir)\n`;
+    message += `Berat estimasi: ${(totalWeight / 1000).toLocaleString('id-ID')} kg\n`;
+    message += `Kurir: ${chosenShipping?.courier} - ${chosenShipping?.service}\n`;
+    if (chosenShipping?.duration) message += `Estimasi pengiriman: ${chosenShipping.duration}\n`;
+    message += `Ongkir: ${formatPrice(chosenShipping?.price || 0)}\n`;
+    message += `Total: ${formatPrice(grandTotal)}\n`;
 
     if (formData.notes.trim()) {
       message += `\n*Catatan:* ${formData.notes}\n`;
@@ -184,9 +213,12 @@ export default function Checkout() {
                     name="district"
                     value={formData.district}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 rounded-lg border border-border focus:outline-none focus:border-deep text-sm"
-                    placeholder="Opsional"
+                    maxLength={5}
+                    inputMode="numeric"
+                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.postalCode ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm`}
+                    placeholder="Kode pos 5 digit"
                   />
+                  {errors.postalCode && <p className="text-xs text-red-500 mt-1">{errors.postalCode}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Kode Pos</label>
@@ -198,6 +230,17 @@ export default function Checkout() {
                     className="w-full px-4 py-2.5 rounded-lg border border-border focus:outline-none focus:border-deep text-sm"
                     placeholder="Opsional"
                   />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">Jasa Pengiriman *</label>
+                  {shippingLoading ? <p className="text-sm text-text-secondary py-3">Menghitung ongkir...</p> : shippingOptions.length > 0 ? (
+                    <select value={selectedShipping} onChange={e => { setSelectedShipping(e.target.value); setErrors(prev => ({...prev, shipping: ""})); }} className="w-full px-4 py-3 rounded-lg border border-border text-sm">
+                      <option value="">Pilih kurir dan layanan</option>
+                      {shippingOptions.map(option => { const value = option.courier + "|" + option.code + "|" + option.price; return <option key={value} value={value}>{option.courier} {option.service} - {formatPrice(option.price)}{option.duration ? " (" + option.duration + ")" : ""}</option>; })}
+                    </select>
+                  ) : <p className="text-sm text-text-secondary py-2">{shippingError || "Masukkan kode pos untuk cek ongkir."}</p>}
+                  {shippingError && <p className="text-xs text-red-500 mt-1">{shippingError}</p>}
+                  {errors.shipping && <p className="text-xs text-red-500 mt-1">{errors.shipping}</p>}
                 </div>
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Alamat Lengkap *</label>
@@ -254,15 +297,10 @@ export default function Checkout() {
                   <span className="text-text-secondary">Subtotal</span>
                   <span className="font-medium">{formatPrice(cartTotal)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">Ongkir</span>
-                  <span className="text-xs text-text-secondary">Menunggu konfirmasi</span>
-                </div>
+                <div className="flex justify-between gap-3"><span className="text-text-secondary">Berat estimasi</span><span className="text-xs text-text-secondary">{(totalWeight / 1000).toLocaleString("id-ID")} kg</span></div>
+                <div className="flex justify-between gap-3"><span className="text-text-secondary">Ongkir</span><span className="text-xs text-right">{chosenShipping ? formatPrice(chosenShipping.price) : "Pilih jasa kirim"}</span></div>
                 <hr className="border-border" />
-                <div className="flex justify-between text-base pt-1">
-                  <span className="font-semibold">Total Sementara</span>
-                  <span className="font-bold">{formatPrice(cartTotal)}</span>
-                </div>
+                <div className="flex justify-between text-base pt-1"><span className="font-semibold">Total</span><span className="font-bold">{formatPrice(grandTotal)}</span></div>
               </div>
 
               <button
