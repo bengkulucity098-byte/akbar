@@ -80,6 +80,7 @@ function Header() {
               </div>
               <Link to="/products?filter=new" className="text-sm font-medium text-text-primary hover:text-deep transition-colors">New Arrivals</Link>
               <Link to="/products?filter=featured" className="text-sm font-medium text-text-primary hover:text-deep transition-colors">Best Sellers</Link>
+              <Link to="/admin" className="text-sm font-medium text-text-secondary hover:text-deep transition-colors">Admin</Link>
             </nav>
 
             {/* Right Icons */}
