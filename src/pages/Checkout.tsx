@@ -4,6 +4,19 @@ import { useApp } from '../context/AppContext';
 import { formatPrice, ProductImage } from '../components/ProductCard';
 import { ArrowLeft, MessageCircle, CheckCircle } from 'lucide-react';
 
+type RegionOption = { id: string; name: string };
+type VillageOption = RegionOption & { postal_code?: string };
+
+const REGION_API = 'https://www.emsifa.com/api-wilayah-indonesia/v2';
+
+async function fetchRegionData<T>(path: string): Promise<T> {
+  const response = await fetch(`${REGION_API}/${path}.json`);
+  if (!response.ok) throw new Error('Data wilayah tidak dapat dimuat.');
+  const result = await response.json();
+  if (!result || !Array.isArray(result.data)) throw new Error('Format data wilayah tidak valid.');
+  return result.data as T;
+}
+
 export default function Checkout() {
   const { cart, cartTotal, clearCart, settings } = useApp();
   const navigate = useNavigate();
@@ -13,17 +26,69 @@ export default function Checkout() {
     province: '',
     city: '',
     district: '',
+    village: '',
     address: '',
     postalCode: '',
     notes: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [provinces, setProvinces] = useState<RegionOption[]>([]);
+  const [regencies, setRegencies] = useState<RegionOption[]>([]);
+  const [districts, setDistricts] = useState<RegionOption[]>([]);
+  const [villages, setVillages] = useState<VillageOption[]>([]);
+  const [provinceId, setProvinceId] = useState('');
+  const [regencyId, setRegencyId] = useState('');
+  const [districtId, setDistrictId] = useState('');
+  const [regionsLoading, setRegionsLoading] = useState({ provinces: true, regencies: false, districts: false, villages: false });
+  const [regionsError, setRegionsError] = useState('');
   const [shippingOptions, setShippingOptions] = useState<Array<{courier:string;service:string;code:string;price:number;duration:string}>>([]);
   const [selectedShipping, setSelectedShipping] = useState('');
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingError, setShippingError] = useState('');
   const totalWeight = cart.reduce((sum, item) => sum + item.quantity * 200, 0);
+
+  useEffect(() => {
+    let active = true;
+    fetchRegionData<RegionOption[]>('provinces')
+      .then(data => { if (active) { setProvinces(data); setRegionsError(''); } })
+      .catch(() => { if (active) setRegionsError('Daftar wilayah gagal dimuat. Muat ulang halaman untuk mencoba lagi.'); })
+      .finally(() => { if (active) setRegionsLoading(prev => ({ ...prev, provinces: false })); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!provinceId) { setRegencies([]); return; }
+    let active = true;
+    setRegionsLoading(prev => ({ ...prev, regencies: true }));
+    fetchRegionData<RegionOption[]>(`regencies/${provinceId}`)
+      .then(data => { if (active) { setRegencies(data); setRegionsError(''); } })
+      .catch(() => { if (active) setRegionsError('Daftar kota/kabupaten gagal dimuat. Coba muat ulang halaman.'); })
+      .finally(() => { if (active) setRegionsLoading(prev => ({ ...prev, regencies: false })); });
+    return () => { active = false; };
+  }, [provinceId]);
+
+  useEffect(() => {
+    if (!regencyId) { setDistricts([]); return; }
+    let active = true;
+    setRegionsLoading(prev => ({ ...prev, districts: true }));
+    fetchRegionData<RegionOption[]>(`districts/${regencyId}`)
+      .then(data => { if (active) { setDistricts(data); setRegionsError(''); } })
+      .catch(() => { if (active) setRegionsError('Daftar kecamatan gagal dimuat. Coba muat ulang halaman.'); })
+      .finally(() => { if (active) setRegionsLoading(prev => ({ ...prev, districts: false })); });
+    return () => { active = false; };
+  }, [regencyId]);
+
+  useEffect(() => {
+    if (!districtId) { setVillages([]); return; }
+    let active = true;
+    setRegionsLoading(prev => ({ ...prev, villages: true }));
+    fetchRegionData<VillageOption[]>(`villages/${districtId}`)
+      .then(data => { if (active) { setVillages(data); setRegionsError(''); } })
+      .catch(() => { if (active) setRegionsError('Daftar kelurahan/desa gagal dimuat. Kode pos bisa diisi manual.'); })
+      .finally(() => { if (active) setRegionsLoading(prev => ({ ...prev, villages: false })); });
+    return () => { active = false; };
+  }, [districtId]);
   const chosenShipping = shippingOptions.find(option => (option.courier + '|' + option.code + '|' + option.price) === selectedShipping);
   const grandTotal = cartTotal + (chosenShipping?.price || 0);
   useEffect(() => {
@@ -61,8 +126,10 @@ export default function Checkout() {
     if (!formData.name.trim()) newErrors.name = 'Nama wajib diisi';
     if (!formData.phone.trim()) newErrors.phone = 'Nomor WhatsApp wajib diisi';
     else if (!/^[0-9+\-\s()]{8,15}$/.test(formData.phone.trim())) newErrors.phone = 'Nomor tidak valid';
-    if (!formData.province.trim()) newErrors.province = 'Provinsi wajib diisi';
-    if (!formData.city.trim()) newErrors.city = 'Kota wajib diisi';
+    if (!formData.province.trim()) newErrors.province = 'Provinsi wajib dipilih';
+    if (!formData.city.trim()) newErrors.city = 'Kota/kabupaten wajib dipilih';
+    if (!formData.district.trim()) newErrors.district = 'Kecamatan wajib dipilih';
+    if (!formData.village.trim()) newErrors.village = 'Kelurahan/desa wajib dipilih';
     if (!formData.address.trim()) newErrors.address = 'Alamat wajib diisi';
     if (!/^\d{5}$/.test(formData.postalCode.trim())) newErrors.postalCode = 'Masukkan kode pos 5 digit';
     if (!chosenShipping) newErrors.shipping = 'Pilih layanan pengiriman yang tersedia';
@@ -75,7 +142,7 @@ export default function Checkout() {
     if (!validate()) return;
 
     // Build WhatsApp message
-    const fullAddress = `${formData.address}, ${formData.district ? formData.district + ', ' : ''}${formData.city}, ${formData.province}${formData.postalCode ? ' ' + formData.postalCode : ''}`;
+    const fullAddress = `${formData.address}, ${formData.village}, ${formData.district}, ${formData.city}, ${formData.province}${formData.postalCode ? ' ' + formData.postalCode : ''}`;
 
     let message = `Halo ${settings.storeName}, saya ingin melakukan pemesanan.\n\n`;
     message += `*Data Pemesan:*\n`;
@@ -184,41 +251,81 @@ export default function Checkout() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Provinsi *</label>
-                  <input
-                    type="text"
-                    name="province"
-                    value={formData.province}
-                    onChange={handleChange}
-                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.province ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm`}
-                    placeholder="Contoh: Jawa Barat"
-                  />
+                  <select
+                    value={provinceId}
+                    disabled={regionsLoading.provinces}
+                    onChange={e => {
+                      const option = provinces.find(item => item.id === e.target.value);
+                      setProvinceId(e.target.value);
+                      setRegencyId(''); setDistrictId('');
+                      setFormData(prev => ({ ...prev, province: option?.name || '', city: '', district: '', village: '', postalCode: '' }));
+                      setRegencies([]); setDistricts([]); setVillages([]);
+                      setErrors(prev => ({ ...prev, province: '', city: '', district: '', village: '', postalCode: '' }));
+                    }}
+                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.province ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm bg-white`}
+                  >
+                    <option value="">{regionsLoading.provinces ? 'Memuat provinsi...' : 'Pilih provinsi'}</option>
+                    {provinces.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
                   {errors.province && <p className="text-xs text-red-500 mt-1">{errors.province}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Kota / Kabupaten *</label>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleChange}
-                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.city ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm`}
-                    placeholder="Contoh: Bandung"
-                  />
+                  <select
+                    value={regencyId}
+                    disabled={!provinceId || regionsLoading.regencies}
+                    onChange={e => {
+                      const option = regencies.find(item => item.id === e.target.value);
+                      setRegencyId(e.target.value); setDistrictId('');
+                      setFormData(prev => ({ ...prev, city: option?.name || '', district: '', village: '', postalCode: '' }));
+                      setDistricts([]); setVillages([]);
+                      setErrors(prev => ({ ...prev, city: '', district: '', village: '', postalCode: '' }));
+                    }}
+                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.city ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm bg-white`}
+                  >
+                    <option value="">{!provinceId ? 'Pilih provinsi dulu' : regionsLoading.regencies ? 'Memuat kota/kabupaten...' : 'Pilih kota/kabupaten'}</option>
+                    {regencies.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
                   {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Kecamatan</label>
-                  <input
-                    type="text"
-                    name="district"
-                    value={formData.district}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2.5 rounded-lg border border-border focus:outline-none focus:border-deep text-sm"
-                    placeholder="Nama kecamatan"
-                  />
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">Kecamatan *</label>
+                  <select
+                    value={districtId}
+                    disabled={!regencyId || regionsLoading.districts}
+                    onChange={e => {
+                      const option = districts.find(item => item.id === e.target.value);
+                      setDistrictId(e.target.value);
+                      setFormData(prev => ({ ...prev, district: option?.name || '', village: '', postalCode: '' }));
+                      setVillages([]);
+                      setErrors(prev => ({ ...prev, district: '', village: '', postalCode: '' }));
+                    }}
+                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.district ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm bg-white`}
+                  >
+                    <option value="">{!regencyId ? 'Pilih kota/kabupaten dulu' : regionsLoading.districts ? 'Memuat kecamatan...' : 'Pilih kecamatan'}</option>
+                    {districts.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
+                  {errors.district && <p className="text-xs text-red-500 mt-1">{errors.district}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1.5">Kode Pos</label>
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">Kelurahan / Desa *</label>
+                  <select
+                    value={formData.village}
+                    disabled={!districtId || regionsLoading.villages}
+                    onChange={e => {
+                      const option = villages.find(item => item.id === e.target.value);
+                      setFormData(prev => ({ ...prev, village: option?.name || '', postalCode: option?.postal_code || '' }));
+                      setErrors(prev => ({ ...prev, village: '', postalCode: '' }));
+                    }}
+                    className={`w-full px-4 py-2.5 rounded-lg border ${errors.village ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm bg-white`}
+                  >
+                    <option value="">{!districtId ? 'Pilih kecamatan dulu' : regionsLoading.villages ? 'Memuat kelurahan/desa...' : 'Pilih kelurahan/desa'}</option>
+                    {villages.map(option => <option key={option.id} value={option.name}>{option.name}{option.postal_code ? ` • ${option.postal_code}` : ''}</option>)}
+                  </select>
+                  {errors.village && <p className="text-xs text-red-500 mt-1">{errors.village}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">Kode Pos *</label>
                   <input
                     type="text"
                     name="postalCode"
@@ -227,10 +334,11 @@ export default function Checkout() {
                     maxLength={5}
                     inputMode="numeric"
                     className={`w-full px-4 py-2.5 rounded-lg border ${errors.postalCode ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm`}
-                    placeholder="Kode pos 5 digit"
+                    placeholder="Terisi otomatis dari kelurahan/desa"
                   />
                   {errors.postalCode && <p className="text-xs text-red-500 mt-1">{errors.postalCode}</p>}
                 </div>
+                {regionsError && <div className="sm:col-span-2"><p className="text-xs text-red-500">{regionsError}</p></div>}
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Jasa Pengiriman *</label>
                   {shippingLoading ? <p className="text-sm text-text-secondary py-3">Menghitung ongkir...</p> : shippingOptions.length > 0 ? (
