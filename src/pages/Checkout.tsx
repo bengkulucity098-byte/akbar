@@ -40,6 +40,7 @@ export default function Checkout() {
   const [provinceId, setProvinceId] = useState('');
   const [regencyId, setRegencyId] = useState('');
   const [districtId, setDistrictId] = useState('');
+  const [villageId, setVillageId] = useState('');
   const [regionsLoading, setRegionsLoading] = useState({ provinces: true, regencies: false, districts: false, villages: false });
   const [regionsError, setRegionsError] = useState('');
   const [shippingOptions, setShippingOptions] = useState<Array<{courier:string;service:string;code:string;price:number;duration:string}>>([]);
@@ -257,7 +258,7 @@ export default function Checkout() {
                     onChange={e => {
                       const option = provinces.find(item => item.id === e.target.value);
                       setProvinceId(e.target.value);
-                      setRegencyId(''); setDistrictId('');
+                      setRegencyId(''); setDistrictId(''); setVillageId('');
                       setFormData(prev => ({ ...prev, province: option?.name || '', city: '', district: '', village: '', postalCode: '' }));
                       setRegencies([]); setDistricts([]); setVillages([]);
                       setErrors(prev => ({ ...prev, province: '', city: '', district: '', village: '', postalCode: '' }));
@@ -276,14 +277,14 @@ export default function Checkout() {
                     disabled={!provinceId || regionsLoading.regencies}
                     onChange={e => {
                       const option = regencies.find(item => item.id === e.target.value);
-                      setRegencyId(e.target.value); setDistrictId('');
+                      setRegencyId(e.target.value); setDistrictId(''); setVillageId('');
                       setFormData(prev => ({ ...prev, city: option?.name || '', district: '', village: '', postalCode: '' }));
                       setDistricts([]); setVillages([]);
                       setErrors(prev => ({ ...prev, city: '', district: '', village: '', postalCode: '' }));
                     }}
                     className={`w-full px-4 py-2.5 rounded-lg border ${errors.city ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm bg-white`}
                   >
-                    <option value="">{!provinceId ? 'Pilih provinsi dulu' : regionsLoading.regencies ? 'Memuat kota/kabupaten...' : 'Pilih kota/kabupaten'}</option>
+                    <option value="">{regionsLoading.regencies ? 'Memuat kota/kabupaten...' : 'Pilih kota/kabupaten'}</option>
                     {regencies.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
                   </select>
                   {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
@@ -295,14 +296,14 @@ export default function Checkout() {
                     disabled={!regencyId || regionsLoading.districts}
                     onChange={e => {
                       const option = districts.find(item => item.id === e.target.value);
-                      setDistrictId(e.target.value);
+                      setDistrictId(e.target.value); setVillageId('');
                       setFormData(prev => ({ ...prev, district: option?.name || '', village: '', postalCode: '' }));
                       setVillages([]);
                       setErrors(prev => ({ ...prev, district: '', village: '', postalCode: '' }));
                     }}
                     className={`w-full px-4 py-2.5 rounded-lg border ${errors.district ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm bg-white`}
                   >
-                    <option value="">{!regencyId ? 'Pilih kota/kabupaten dulu' : regionsLoading.districts ? 'Memuat kecamatan...' : 'Pilih kecamatan'}</option>
+                    <option value="">{regionsLoading.districts ? 'Memuat kecamatan...' : 'Pilih kecamatan'}</option>
                     {districts.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
                   </select>
                   {errors.district && <p className="text-xs text-red-500 mt-1">{errors.district}</p>}
@@ -310,17 +311,18 @@ export default function Checkout() {
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Kelurahan / Desa *</label>
                   <select
-                    value={formData.village}
+                    value={villageId}
                     disabled={!districtId || regionsLoading.villages}
                     onChange={e => {
                       const option = villages.find(item => item.id === e.target.value);
+                      setVillageId(e.target.value);
                       setFormData(prev => ({ ...prev, village: option?.name || '', postalCode: option?.postal_code || '' }));
                       setErrors(prev => ({ ...prev, village: '', postalCode: '' }));
                     }}
                     className={`w-full px-4 py-2.5 rounded-lg border ${errors.village ? 'border-red-300' : 'border-border'} focus:outline-none focus:border-deep text-sm bg-white`}
                   >
-                    <option value="">{!districtId ? 'Pilih kecamatan dulu' : regionsLoading.villages ? 'Memuat kelurahan/desa...' : 'Pilih kelurahan/desa'}</option>
-                    {villages.map(option => <option key={option.id} value={option.name}>{option.name}{option.postal_code ? ` • ${option.postal_code}` : ''}</option>)}
+                    <option value="">{regionsLoading.villages ? 'Memuat kelurahan/desa...' : 'Pilih kelurahan/desa'}</option>
+                    {villages.map(option => <option key={option.id} value={option.id}>{option.name}{option.postal_code ? ` • ${option.postal_code}` : ''}</option>)}
                   </select>
                   {errors.village && <p className="text-xs text-red-500 mt-1">{errors.village}</p>}
                 </div>
